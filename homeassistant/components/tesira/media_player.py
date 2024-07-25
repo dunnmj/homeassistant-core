@@ -1,3 +1,4 @@
+import asyncio
 import logging
 import math
 
@@ -11,6 +12,7 @@ from homeassistant.components.media_player import (
 from homeassistant.components.media_player.const import MediaPlayerEntityFeature
 from homeassistant.const import CONF_IP_ADDRESS, CONF_NAME
 from homeassistant.core import HomeAssistant
+from homeassistant.exceptions import PlatformNotReady
 import homeassistant.helpers.config_validation as cv
 from homeassistant.helpers.typing import ConfigType
 
@@ -45,9 +47,12 @@ async def async_setup_platform(
     name = config[CONF_NAME]
     source_selector_instance_ids = config[CONF_ZONES]
     _LOGGER.debug("Setting up Tesira platform")
-    t = await Tesira.new(ip, "default")
+    try:
+        t = await Tesira.new(ip, "default")
+    except (TimeoutError, OSError) as e:
+        raise PlatformNotReady(f"Unable to connect to Tesira: {str(e)}") from e
     serial = await t.serial_number()
-    _LOGGER.error("Serial number is " + str(serial))
+    # _LOGGER.error("Serial number is %s", str(serial))
 
     for instance_id in source_selector_instance_ids:
         source_map = await t.sources(instance_id)
@@ -106,11 +111,6 @@ class TesiraSourceSelector(MediaPlayerEntity):
         else:
             _LOGGER.error(f"Unknown source ID: {value}")
         self.try_write_state()
-
-    # @property
-    # def name(self) -> str:
-    #     """Return the display name of the sky box remote."""
-    #     return self._name
 
     @property
     def state(self):

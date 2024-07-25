@@ -8,21 +8,25 @@ import re
 import asyncssh
 
 OK_RESPONSE = re.compile("^\\+OK ?(.*)\r\n")
+OK_RESPONSE_WITH_VALUE = re.compile('^\\+OK ("value".*)\r\n')
 VALUE_REGEX = re.compile('"value":(.*)')
 SUBSCRIPTION_REGEX = re.compile('^! "publishToken":"([^"]+)" "value":(.*)\r\n')
 
 
 class Tesira:
-    def __init__(
-        self, conn: asyncssh.SSHClientConnection, process, subscription_process
-    ):
-        self._conn = conn
-        self._process = process
-        self._subscription_process = subscription_process
+    def __init__(self, ip: str, username: str, password: str):
+        self._ip = ip
+        self._username = username
+        self._password = password
+
+        self._conn = None
+        self._process = None
+        self._subscription_process = None
         self._subscription_callbacks = {}
         self._subscription_process_lock = Lock()
         self._subscription_process_event = Event()
-        create_task(self.subscription_listen())
+        self._connection_management_lock = Lock()
+        self._subscription_history = []
 
     async def subscription_listen(self):
         while True:
@@ -71,10 +75,12 @@ class Tesira:
                     )
 
                 self._subscription_callbacks[subscription_name] = callback
-                self._subscription_process.stdin.write(
+                subscription_command = (
                     f"{instance_id} subscribe {attribute} {subscription_name}\r\n"
                 )
+                self._subscription_process.stdin.write(subscription_command)
                 # todo confirm successful subscription
+                self._subscription_history.append(subscription_command)
         finally:
             self._subscription_process_event.clear()
 
@@ -93,53 +99,79 @@ class Tesira:
             if "Welcome to the Tesira Text Protocol Server..." in response_accumulator:
                 process.stdin.write("SESSION set verbose true\r\n")
                 process.stdin.write("SESSION set detailedResponse false\r\n")
+                for _ in range(6):
+                    await wait_for(process.stdout.readline(), timeout=1)
                 return process
 
             await sleep(0.5)
-        print(response_accumulator)
         raise Exception("device probably isnt a tesira")
 
     @classmethod
     async def new(cls, ip, user):
-        try:
-            conn = await asyncssh.connect(
-                ip, username=user, password="", client_keys=None, known_hosts=None
+        new_instance = cls(ip, user, "")
+        await new_instance.connect()
+        new_instance._subscription_task = create_task(
+            new_instance.manage_subscription_connection()
+        )
+        return new_instance
+
+    async def manage_subscription_connection(self):
+        while True:
+            try:
+                await self.connect()
+                await self.subscription_listen()
+            except asyncssh.ConnectionLost as e:
+                logging.error("Error in managing subscription connection: %s", e)
+            except OSError as e:
+                logging.error("Error re-establishing subscription connection: %s", e)
+            await self.invalidate_connection()
+            await asyncio.sleep(5)
+
+    async def invalidate_connection(self):
+        async with self._connection_management_lock:
+            if self._conn is None:
+                return
+            self._process.close()
+            self._subscription_process.close()
+            self._conn.close()
+            self._conn = None
+            self._process = None
+            self._subscription_process = None
+
+    async def connect(self):
+        async with self._connection_management_lock:
+            if self._conn is not None:
+                return
+            self._conn = await asyncssh.connect(
+                self._ip,
+                username=self._username,
+                password=self._password,
+                client_keys=None,
+                known_hosts=None,
+                keepalive_interval=10,
             )
-            process = await cls._get_process(conn)
-            subscription_process = await cls._get_process(conn)
-            return cls(conn, process, subscription_process)
-        except ValueError as e:
-            print(f"Example of a timeout occurrence: {e}")
+            self._process = await self._get_process(self._conn)
+            self._subscription_process = await self._get_process(self._conn)
+            for command in self._subscription_history:
+                self._subscription_process.stdin.write(command)
 
     async def serial_number(self):
-        self._process.stdin.write("DEVICE get serialNumber\r\n")
-        response_accumulator = []
-        while len(response_accumulator) < 10:
-            response = await wait_for(
-                self._process.stdout.readline(), timeout=0.5
-            )  # todo handle timeout
-            response_accumulator.append(response)
-            print(response_accumulator)
-            if response.split(" ")[0] == "+OK":
-                break
-            response = None
-        if response is None:
-            raise ValueError("no valid response " + str(response_accumulator))
-        val = int(response.split(":")[1][1:-3])
-        return val
+        serial = self.parse_value(
+            await self._send_command("DEVICE get serialNumber", expects_value=True)
+        )
+        return int(serial[1:-1])
 
-    async def _send_command(self, command):
+    async def _send_command(self, command, expects_value=False):
+        regex = OK_RESPONSE_WITH_VALUE if expects_value else OK_RESPONSE
         self._process.stdin.write(command + "\r\n")
         response_accumulator = []
         while len(response_accumulator) < 5:
             try:
-                response = await wait_for(
-                    self._process.stdout.readline(), timeout=0.5
-                )  # todo handle timeout
+                response = await wait_for(self._process.stdout.readline(), timeout=5)
             except TimeoutError as e:
                 raise ValueError("Recieved so far " + str(response_accumulator)) from e
             response_accumulator.append(response)
-            if match := re.search(OK_RESPONSE, response):
+            if match := re.search(regex, response):
                 return match.group(1)
             response = None
         if response is None:
