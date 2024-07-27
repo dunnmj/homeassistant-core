@@ -13,12 +13,14 @@ from homeassistant.components.media_player.const import MediaPlayerEntityFeature
 from homeassistant.const import CONF_IP_ADDRESS, CONF_NAME
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import PlatformNotReady
+from homeassistant.helpers import entity_platform
 import homeassistant.helpers.config_validation as cv
 from homeassistant.helpers.typing import ConfigType
 
 from .tesira import Tesira
 
 DOMAIN = "tesira"
+SERVICE_NAME = "danger_bics"
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -39,6 +41,12 @@ PLATFORM_SCHEMA = PLATFORM_SCHEMA.extend(
 )
 
 
+async def send_command(entity, service_call):
+    """Send a command to the Tesira."""
+    for command in service_call.data["command_strings"]:
+        await entity.async_send_command(command)
+
+
 async def async_setup_platform(
     hass: HomeAssistant, config: ConfigType, async_add_entities, discovery_info=None
 ):
@@ -46,7 +54,20 @@ async def async_setup_platform(
     ip = config[CONF_IP_ADDRESS]
     name = config[CONF_NAME]
     source_selector_instance_ids = config[CONF_ZONES]
-    _LOGGER.debug("Setting up Tesira platform")
+    _LOGGER.warn("Setting up Tesira platform")
+    platform = entity_platform.async_get_current_platform()
+
+    # This will call Entity.set_sleep_timer(sleep_time=VALUE)
+    platform.async_register_entity_service(
+        SERVICE_NAME,
+        {
+            vol.Required("command_strings"): vol.All(
+                cv.ensure_list,
+                [cv.string],
+            ),
+        },
+        send_command,
+    )
     try:
         t = await Tesira.new(ip, "default")
     except (TimeoutError, OSError) as e:
@@ -99,7 +120,6 @@ class TesiraSourceSelector(MediaPlayerEntity):
 
     def _mute_callback(self, value):
         self._attr_is_volume_muted = value == "true"
-        print(f"'{value}'")
         self.try_write_state()
 
     def _source_callback(self, value):
@@ -110,6 +130,7 @@ class TesiraSourceSelector(MediaPlayerEntity):
                 break
         else:
             _LOGGER.error(f"Unknown source ID: {value}")
+            self._attr_source = "Unknown"
         self.try_write_state()
 
     @property
@@ -140,3 +161,6 @@ class TesiraSourceSelector(MediaPlayerEntity):
         await self._tesira.set_mute(self._instance_id, mute)
         self._attr_is_volume_muted = mute
         self.async_write_ha_state()
+
+    async def async_send_command(self, command_string: str) -> None:
+        await self._tesira._send_command(command_string)
