@@ -1,6 +1,6 @@
 
 # Service ID
-danger_bics:
+send_command:
   # If the service action accepts entity IDs, target allows the user to specify
   # entities by entity, device, or area. If `target` is specified, `entity_id`
   # should not be  defined in the `fields` map. By default it shows only targets

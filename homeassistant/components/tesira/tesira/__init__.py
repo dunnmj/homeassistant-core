@@ -12,6 +12,12 @@ OK_RESPONSE_WITH_VALUE = re.compile('^\\+OK ("value".*)\r\n')
 VALUE_REGEX = re.compile('"value":(.*)')
 SUBSCRIPTION_REGEX = re.compile('^! "publishToken":"([^"]+)" "value":(.*)\r\n')
 
+quote = '"'
+
+
+class CommandFailedException(Exception):
+    pass
+
 
 class Tesira:
     def __init__(self, ip: str, username: str, password: str):
@@ -27,6 +33,7 @@ class Tesira:
         self._subscription_process_event = Event()
         self._connection_management_lock = Lock()
         self._subscription_history = []
+        self._command_lock = Lock()
 
     async def subscription_listen(self):
         while True:
@@ -65,7 +72,9 @@ class Tesira:
         handler(value)
 
     async def subscribe(self, instance_id, attribute, callback):
-        subscription_name = f"{instance_id}_{attribute}"
+        subscription_name = (
+            f"{instance_id.replace(' ', '_')}_{attribute.replace(' ', '_')}"
+        )
         self._subscription_process_event.set()
         try:
             async with self._subscription_process_lock:
@@ -76,7 +85,7 @@ class Tesira:
 
                 self._subscription_callbacks[subscription_name] = callback
                 subscription_command = (
-                    f"{instance_id} subscribe {attribute} {subscription_name}\r\n"
+                    f'"{instance_id}" subscribe {attribute} {subscription_name}\r\n'
                 )
                 self._subscription_process.stdin.write(subscription_command)
                 # todo confirm successful subscription
@@ -107,8 +116,8 @@ class Tesira:
         raise Exception("device probably isnt a tesira")
 
     @classmethod
-    async def new(cls, ip, user):
-        new_instance = cls(ip, user, "")
+    async def new(cls, ip, user, password):
+        new_instance = cls(ip, user, password)
         await new_instance.connect()
         new_instance._subscription_task = create_task(
             new_instance.manage_subscription_connection()
@@ -162,25 +171,30 @@ class Tesira:
         return int(serial[1:-1])
 
     async def _send_command(self, command, expects_value=False):
-        regex = OK_RESPONSE_WITH_VALUE if expects_value else OK_RESPONSE
-        self._process.stdin.write(command + "\r\n")
-        response_accumulator = []
-        while len(response_accumulator) < 5:
-            try:
-                response = await wait_for(self._process.stdout.readline(), timeout=5)
-            except TimeoutError as e:
-                raise ValueError("Recieved so far " + str(response_accumulator)) from e
-            response_accumulator.append(response)
-            if match := re.search(regex, response):
-                return match.group(1)
-            response = None
-        if response is None:
-            raise ValueError(
-                f"failed to send command {command} " + str(response_accumulator)
-            )
+        async with self._command_lock:
+            regex = OK_RESPONSE_WITH_VALUE if expects_value else OK_RESPONSE
+            self._process.stdin.write(command + "\r\n")
+            response_accumulator = []
+            while len(response_accumulator) < 5:
+                try:
+                    response = await wait_for(
+                        self._process.stdout.readline(), timeout=5
+                    )
+                except TimeoutError as e:
+                    raise CommandFailedException(
+                        "Recieved so far " + str(response_accumulator)
+                    ) from e
+                response_accumulator.append(response)
+                if match := re.search(regex, response):
+                    return match.group(1)
+                response = None
+            if response is None:
+                raise CommandFailedException(
+                    f"failed to send command {command} " + str(response_accumulator)
+                )
 
     async def select_source(self, instance_id, source):
-        await self._send_command(f"{instance_id} set sourceSelection {source}")
+        await self._send_command(f'"{instance_id}" set sourceSelection {source}')
 
     @staticmethod
     def parse_value(value_str):
@@ -190,18 +204,36 @@ class Tesira:
 
     async def sources(self, instance_id):
         source_count = int(
-            self.parse_value(await self._send_command(f"{instance_id} get numSources"))
+            self.parse_value(
+                await self._send_command(f'"{instance_id}" get numSources')
+            )
         )
         source_map = {}
         for source_number in range(1, source_count + 1):
             source_name = self.parse_value(
-                await self._send_command(f"{instance_id} get label {source_number}")
+                await self._send_command(f'"{instance_id}" get label {source_number}')
             )[1:-1]
             source_map[source_name] = source_number
         return source_map
 
+    async def inputs(
+        self, instance_id, num_key="numInputs", input_label_key="inputLabel"
+    ):
+        input_count = int(
+            self.parse_value(await self._send_command(f'"{instance_id}" get {num_key}'))
+        )
+        input_map = {}
+        for input_number in range(1, input_count + 1):
+            input_name = self.parse_value(
+                await self._send_command(
+                    f'"{instance_id}" get {input_label_key} {input_number}'
+                )
+            )[1:-1]
+            input_map[input_name] = input_number
+        return input_map
+
     async def set_volume(self, instance_id, volume):
-        await self._send_command(f"{instance_id} set outputLevel {volume}")
+        await self._send_command(f'"{instance_id}" set outputLevel {volume}')
 
     async def set_mute(self, instance_id, mute):
-        await self._send_command(f"{instance_id} set outputMute {str(mute).lower()}")
+        await self._send_command(f'"{instance_id}" set outputMute {str(mute).lower()}')

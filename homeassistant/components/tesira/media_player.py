@@ -9,18 +9,22 @@ from homeassistant.components.media_player import (
     MediaPlayerEntity,
     MediaPlayerState,
 )
+
 from homeassistant.components.media_player.const import MediaPlayerEntityFeature
-from homeassistant.const import CONF_IP_ADDRESS, CONF_NAME
+from homeassistant.components.tesira import get_tesira
+from homeassistant.components.tesira.switch import TesiraMute
+from homeassistant.const import CONF_IP_ADDRESS, CONF_USERNAME, CONF_PASSWORD, CONF_NAME
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import PlatformNotReady
 from homeassistant.helpers import entity_platform
 import homeassistant.helpers.config_validation as cv
 from homeassistant.helpers.typing import ConfigType
 
-from .tesira import Tesira
+
+from .tesira import Tesira, CommandFailedException
 
 DOMAIN = "tesira"
-SERVICE_NAME = "danger_bics"
+SERVICE_NAME = "send_command"
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -32,6 +36,8 @@ CONF_ZONES = "zones"
 PLATFORM_SCHEMA = PLATFORM_SCHEMA.extend(
     {
         vol.Required(CONF_IP_ADDRESS): cv.string,
+        vol.Required(CONF_USERNAME): cv.string,
+        vol.Required(CONF_PASSWORD): cv.string,
         vol.Required(CONF_NAME): cv.string,
         vol.Required(CONF_ZONES): vol.All(
             cv.ensure_list,
@@ -51,13 +57,14 @@ async def async_setup_platform(
     hass: HomeAssistant, config: ConfigType, async_add_entities, discovery_info=None
 ):
     """Set up the Tesira platform."""
+    _LOGGER.debug("MediaPlayer: %s", config)
+    if config == {}:
+        return
+
     ip = config[CONF_IP_ADDRESS]
-    name = config[CONF_NAME]
     source_selector_instance_ids = config[CONF_ZONES]
-    _LOGGER.warn("Setting up Tesira platform")
     platform = entity_platform.async_get_current_platform()
 
-    # This will call Entity.set_sleep_timer(sleep_time=VALUE)
     platform.async_register_entity_service(
         SERVICE_NAME,
         {
@@ -68,18 +75,21 @@ async def async_setup_platform(
         },
         send_command,
     )
-    try:
-        t = await Tesira.new(ip, "default")
-    except (TimeoutError, OSError) as e:
-        raise PlatformNotReady(f"Unable to connect to Tesira: {str(e)}") from e
+    t = await get_tesira(hass, ip, config[CONF_USERNAME], config[CONF_PASSWORD])
     serial = await t.serial_number()
     # _LOGGER.error("Serial number is %s", str(serial))
 
     for instance_id in source_selector_instance_ids:
-        source_map = await t.sources(instance_id)
-        async_add_entities(
-            [await TesiraSourceSelector.new(t, instance_id, serial, source_map)]
-        )
+        try:
+            source_map = await t.sources(instance_id)
+            async_add_entities(
+                [await TesiraSourceSelector.new(t, instance_id, serial, source_map)]
+            )
+        except CommandFailedException as e:
+            _LOGGER.error(
+                "Error initializing source selector %s: %s", instance_id, str(e)
+            )
+            continue
 
 
 class TesiraSourceSelector(MediaPlayerEntity):
@@ -93,7 +103,6 @@ class TesiraSourceSelector(MediaPlayerEntity):
     _attr_should_poll = False
 
     def __init__(self, tesira: Tesira, instance_id, serial_number, source_map):
-        """Initialize the Sky Remote."""
         self._tesira = tesira
         self._serial = serial_number
         self._instance_id = instance_id
@@ -101,6 +110,7 @@ class TesiraSourceSelector(MediaPlayerEntity):
         self._source_map = source_map
         self._attr_source_list = list(source_map.keys())
         self._attr_source = self._attr_source_list[0]
+        self._attr_name = instance_id.split("-", 1)[1]
 
     @classmethod
     async def new(cls, tesira: Tesira, instance_id, serial_number, source_map):
@@ -137,7 +147,7 @@ class TesiraSourceSelector(MediaPlayerEntity):
     def state(self):
         return MediaPlayerState.ON
 
-    async def async_select_source(self, source):
+    async def async_select_source(self, source: str) -> None:
         """Select input source."""
         source_id = self._source_map[source]
         await self._tesira.select_source(self._instance_id, source_id)
@@ -152,7 +162,7 @@ class TesiraSourceSelector(MediaPlayerEntity):
     def db_to_volume(db):
         return math.pow(2, ((2 * db) / 21))
 
-    async def async_set_volume_level(self, volume):
+    async def async_set_volume_level(self, volume: float) -> None:
         await self._tesira.set_volume(self._instance_id, self.volume_to_db(volume))
         self._attr_volume_level = volume
         self.async_write_ha_state()

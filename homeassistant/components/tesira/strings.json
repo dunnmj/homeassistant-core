@@ -1,0 +1,15 @@
+{
+  "title": "Tesira Control",
+  "services": {
+    "send_command": {
+      "name": "Send Command",
+      "description": "Sends a list of command strings to the Tesira device that the selected media player entity is part of.",
+      "fields": {
+        "command_strings": {
+          "description": "List of command strings to send",
+          "name": "Commands"
+        }
+      }
+    }
+  }
+}
