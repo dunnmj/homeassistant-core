@@ -91,10 +91,6 @@ class Tesira:
         finally:
             self._subscription_process_event.clear()
 
-    @property
-    def conn(self):
-        self._conn
-
     @staticmethod
     async def _get_process(conn):
         process = await conn.create_process(term_type="vt100")
@@ -234,5 +230,10 @@ class Tesira:
     async def set_volume(self, instance_id, volume):
         await self._send_command(f'"{instance_id}" set outputLevel {volume}')
 
-    async def set_mute(self, instance_id, mute):
+    async def set_output_mute(self, instance_id, mute):
         await self._send_command(f'"{instance_id}" set outputMute {str(mute).lower()}')
+
+    async def set_mute(self, instance_id, input_number, mute):
+        await self._send_command(
+            f'"{instance_id}" set mute {input_number} {str(mute).lower()}'
+        )

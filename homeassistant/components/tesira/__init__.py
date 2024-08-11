@@ -1,13 +1,16 @@
 """The Tesira control component."""
 
-import homeassistant.helpers.config_validation as cv
-import voluptuous as vol
 import asyncio
-from .tesira import Tesira
-from homeassistant.exceptions import PlatformNotReady
-from homeassistant.const import CONF_IP_ADDRESS, CONF_NAME, CONF_USERNAME, CONF_PASSWORD
+
+import voluptuous as vol
+
+from homeassistant.const import CONF_IP_ADDRESS, CONF_NAME, CONF_PASSWORD, CONF_USERNAME
 from homeassistant.core import HomeAssistant
+from homeassistant.exceptions import PlatformNotReady
+import homeassistant.helpers.config_validation as cv
 from homeassistant.helpers.discovery import async_load_platform
+
+from .tesira import Tesira
 
 DOMAIN = "tesira"
 CONF_ZONES = "zones"
@@ -102,4 +105,4 @@ async def get_tesira(hass, ip, username, password) -> Tesira:
     except (TimeoutError, OSError) as e:
         async with TESIRA_CREATION_LOCK:
             hass.data[DOMAIN].pop(ip)
-        raise PlatformNotReady(f"Unable to connect to Tesira: {str(e)}") from e
+        raise PlatformNotReady(f"Unable to connect to Tesira: {e!s}") from e

@@ -1,4 +1,3 @@
-import asyncio
 import logging
 import math
 
@@ -9,18 +8,15 @@ from homeassistant.components.media_player import (
     MediaPlayerEntity,
     MediaPlayerState,
 )
-
 from homeassistant.components.media_player.const import MediaPlayerEntityFeature
-from . import get_tesira
-from homeassistant.const import CONF_IP_ADDRESS, CONF_USERNAME, CONF_PASSWORD, CONF_NAME
+from homeassistant.const import CONF_IP_ADDRESS, CONF_NAME, CONF_PASSWORD, CONF_USERNAME
 from homeassistant.core import HomeAssistant
-from homeassistant.exceptions import PlatformNotReady
 from homeassistant.helpers import entity_platform
 import homeassistant.helpers.config_validation as cv
 from homeassistant.helpers.typing import ConfigType
 
-
-from .tesira import Tesira, CommandFailedException
+from . import get_tesira
+from .tesira import CommandFailedException, Tesira
 
 DOMAIN = "tesira"
 SERVICE_NAME = "send_command"
@@ -177,7 +173,7 @@ class TesiraSourceSelector(MediaPlayerEntity):
         self.async_write_ha_state()
 
     async def async_mute_volume(self, mute: bool) -> None:
-        await self._tesira.set_mute(self._instance_id, mute)
+        await self._tesira.set_output_mute(self._instance_id, mute)
         self._attr_is_volume_muted = mute
         self.async_write_ha_state()
 

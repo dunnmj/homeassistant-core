@@ -1,14 +1,16 @@
 import logging
+from typing import Any
 
 import voluptuous as vol
 
-from homeassistant.components.switch import SwitchEntity, PLATFORM_SCHEMA
-from . import get_tesira
+from homeassistant.components.switch import PLATFORM_SCHEMA, SwitchEntity
+from homeassistant.const import CONF_IP_ADDRESS, CONF_NAME, CONF_PASSWORD, CONF_USERNAME
 from homeassistant.core import HomeAssistant
-from homeassistant.helpers.typing import ConfigType
-from homeassistant.const import CONF_IP_ADDRESS, CONF_USERNAME, CONF_PASSWORD, CONF_NAME
 import homeassistant.helpers.config_validation as cv
-from .tesira import Tesira, CommandFailedException
+from homeassistant.helpers.typing import ConfigType
+
+from . import get_tesira
+from .tesira import CommandFailedException, Tesira
 
 _LOGGER = logging.getLogger(__name__)
 DOMAIN = "tesira"
@@ -84,9 +86,9 @@ class TesiraMute(SwitchEntity):
     async def new(
         cls, tesira: Tesira, instance_id, serial_number, input_number, input_name
     ):
-        mute = cls(tesira, instance_id, serial_number, input_number, input_name)
-        await tesira.subscribe(instance_id, f"mute {input_number}", mute._mute_callback)
-        return mute
+        self = cls(tesira, instance_id, serial_number, input_number, input_name)
+        await tesira.subscribe(instance_id, f"mute {input_number}", self._mute_callback)
+        return self
 
     def try_write_state(self):
         if self.hass:
@@ -96,14 +98,10 @@ class TesiraMute(SwitchEntity):
         self._attr_is_on = value != "true"
         self.try_write_state()
 
-    async def async_turn_on(self, **kwargs):
+    async def async_turn_on(self, **kwargs: Any) -> None:
         """Turn input on."""
-        await self._tesira._send_command(
-            f'"{self._instance_id}" set mute {self._input_number} false'
-        )
+        await self._tesira.set_mute(self._instance_id, self._input_number, False)
 
-    async def async_turn_off(self, **kwargs):
+    async def async_turn_off(self, **_kwargs: Any) -> None:
         """Turn input off."""
-        await self._tesira._send_command(
-            f'"{self._instance_id}" set mute {self._input_number} true'
-        )
+        await self._tesira.set_mute(self._instance_id, self._input_number, True)
