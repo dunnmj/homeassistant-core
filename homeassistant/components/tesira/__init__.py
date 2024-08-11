@@ -3,10 +3,11 @@
 import homeassistant.helpers.config_validation as cv
 import voluptuous as vol
 import asyncio
-from homeassistant.components.tesira.tesira import Tesira
+from .tesira import Tesira
 from homeassistant.exceptions import PlatformNotReady
 from homeassistant.const import CONF_IP_ADDRESS, CONF_NAME, CONF_USERNAME, CONF_PASSWORD
 from homeassistant.core import HomeAssistant
+from homeassistant.helpers.discovery import async_load_platform
 
 DOMAIN = "tesira"
 CONF_ZONES = "zones"
@@ -70,12 +71,8 @@ async def async_setup(hass: HomeAssistant, config):
             for tesira_device in config[DOMAIN]
         ],
     }
-    await hass.helpers.discovery.async_load_platform(
-        "media_player", DOMAIN, {}, reformatted_config
-    )
-    await hass.helpers.discovery.async_load_platform(
-        "switch", DOMAIN, {}, reformatted_config
-    )
+    await async_load_platform(hass, "media_player", DOMAIN, {}, reformatted_config)
+    await async_load_platform(hass, "switch", DOMAIN, {}, reformatted_config)
     return True
 
 

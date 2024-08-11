@@ -12,8 +12,6 @@ OK_RESPONSE_WITH_VALUE = re.compile('^\\+OK ("value".*)\r\n')
 VALUE_REGEX = re.compile('"value":(.*)')
 SUBSCRIPTION_REGEX = re.compile('^! "publishToken":"([^"]+)" "value":(.*)\r\n')
 
-quote = '"'
-
 
 class CommandFailedException(Exception):
     pass
@@ -209,6 +207,7 @@ class Tesira:
             )
         )
         source_map = {}
+        source_map["No Source"] = 0
         for source_number in range(1, source_count + 1):
             source_name = self.parse_value(
                 await self._send_command(f'"{instance_id}" get label {source_number}')

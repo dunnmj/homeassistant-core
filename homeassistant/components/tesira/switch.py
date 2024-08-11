@@ -3,7 +3,7 @@ import logging
 import voluptuous as vol
 
 from homeassistant.components.switch import SwitchEntity, PLATFORM_SCHEMA
-from homeassistant.components.tesira import get_tesira
+from . import get_tesira
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.typing import ConfigType
 from homeassistant.const import CONF_IP_ADDRESS, CONF_USERNAME, CONF_PASSWORD, CONF_NAME
@@ -58,6 +58,16 @@ async def async_setup_platform(
 
 
 class TesiraMute(SwitchEntity):
+    @staticmethod
+    def name_from_instance_id(instance_id):
+        split_id = instance_id.split("- ", 1)
+        if len(split_id) >= 2:
+            return split_id[1]
+        split_id = instance_id.split("-", 1)
+        if len(split_id) >= 2:
+            return split_id[1]
+        return instance_id
+
     def __init__(
         self, tesira: Tesira, instance_id, serial_number, input_number, input_name
     ):
@@ -65,8 +75,10 @@ class TesiraMute(SwitchEntity):
         self._serial = serial_number
         self._instance_id = instance_id
         self._input_number = input_number
-        self._attr_name = instance_id.split("-", 1)[1] + " - " + input_name
-        self._attr_unique_id = f"{serial_number}_{instance_id}_{input_number}"
+        self._attr_name = self.name_from_instance_id(instance_id) + " - " + input_name
+        self._attr_unique_id = (
+            f"{serial_number}_{instance_id.replace(' ', '_')}_{input_number}"
+        )
 
     @classmethod
     async def new(

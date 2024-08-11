@@ -11,8 +11,7 @@ from homeassistant.components.media_player import (
 )
 
 from homeassistant.components.media_player.const import MediaPlayerEntityFeature
-from homeassistant.components.tesira import get_tesira
-from homeassistant.components.tesira.switch import TesiraMute
+from . import get_tesira
 from homeassistant.const import CONF_IP_ADDRESS, CONF_USERNAME, CONF_PASSWORD, CONF_NAME
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import PlatformNotReady
@@ -102,15 +101,25 @@ class TesiraSourceSelector(MediaPlayerEntity):
     )
     _attr_should_poll = False
 
+    @staticmethod
+    def name_from_instance_id(instance_id):
+        split_id = instance_id.split("- ", 1)
+        if len(split_id) >= 2:
+            return split_id[1]
+        split_id = instance_id.split("-", 1)
+        if len(split_id) >= 2:
+            return split_id[1]
+        return instance_id
+
     def __init__(self, tesira: Tesira, instance_id, serial_number, source_map):
         self._tesira = tesira
         self._serial = serial_number
         self._instance_id = instance_id
-        self._attr_unique_id = f"{serial_number}_{instance_id}"
+        self._attr_unique_id = f"{serial_number}_{instance_id.replace(' ', '_')}"
         self._source_map = source_map
         self._attr_source_list = list(source_map.keys())
         self._attr_source = self._attr_source_list[0]
-        self._attr_name = instance_id.split("-", 1)[1]
+        self._attr_name = self.name_from_instance_id(instance_id)
 
     @classmethod
     async def new(cls, tesira: Tesira, instance_id, serial_number, source_map):
@@ -139,7 +148,7 @@ class TesiraSourceSelector(MediaPlayerEntity):
                 self._attr_source = source
                 break
         else:
-            _LOGGER.error(f"Unknown source ID: {value}")
+            _LOGGER.error(f"Unknown source ID: {value} {self._instance_id}")
             self._attr_source = "Unknown"
         self.try_write_state()
 
