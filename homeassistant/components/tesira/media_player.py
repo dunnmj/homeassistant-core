@@ -119,11 +119,11 @@ class TesiraSourceSelector(MediaPlayerEntity):
 
     @classmethod
     async def new(cls, tesira: Tesira, instance_id, serial_number, source_map):
-        player = cls(tesira, instance_id, serial_number, source_map)
-        await tesira.subscribe(instance_id, "outputLevel", player._volume_callback)
-        await tesira.subscribe(instance_id, "outputMute", player._mute_callback)
-        await tesira.subscribe(instance_id, "sourceSelection", player._source_callback)
-        return player
+        self = cls(tesira, instance_id, serial_number, source_map)
+        await tesira.subscribe(instance_id, "outputLevel", self._volume_callback)
+        await tesira.subscribe(instance_id, "outputMute", self._mute_callback)
+        await tesira.subscribe(instance_id, "sourceSelection", self._source_callback)
+        return self
 
     def try_write_state(self):
         if self.hass:
@@ -144,7 +144,7 @@ class TesiraSourceSelector(MediaPlayerEntity):
                 self._attr_source = source
                 break
         else:
-            _LOGGER.error(f"Unknown source ID: {value} {self._instance_id}")
+            _LOGGER.error("Unknown source ID: %i %s", value, self._instance_id)
             self._attr_source = "Unknown"
         self.try_write_state()
 
@@ -178,4 +178,4 @@ class TesiraSourceSelector(MediaPlayerEntity):
         self.async_write_ha_state()
 
     async def async_send_command(self, command_string: str) -> None:
-        await self._tesira._send_command(command_string)
+        await self._tesira._send_command(command_string)  # noqa: SLF001

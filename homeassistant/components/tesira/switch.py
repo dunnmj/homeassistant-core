@@ -75,7 +75,7 @@ class TesiraMute(SwitchEntity):
 
     def __init__(
         self, tesira: Tesira, instance_id, serial_number, input_number, input_name
-    ):
+    ) -> None:
         self._tesira = tesira
         self._serial = serial_number
         self._instance_id = instance_id

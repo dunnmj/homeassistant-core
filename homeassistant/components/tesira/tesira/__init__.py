@@ -26,6 +26,7 @@ class Tesira:
         self._conn = None
         self._process = None
         self._subscription_process = None
+        self._subscription_task = None
         self._subscription_callbacks = {}
         self._subscription_process_lock = Lock()
         self._subscription_process_event = Event()
@@ -111,12 +112,10 @@ class Tesira:
 
     @classmethod
     async def new(cls, ip, user, password):
-        new_instance = cls(ip, user, password)
-        await new_instance.connect()
-        new_instance._subscription_task = create_task(
-            new_instance.manage_subscription_connection()
-        )
-        return new_instance
+        self = cls(ip, user, password)
+        await self.connect()
+        self._subscription_task = create_task(self.manage_subscription_connection())
+        return self
 
     async def manage_subscription_connection(self):
         while True:
