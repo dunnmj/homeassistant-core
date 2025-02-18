@@ -1,7 +1,7 @@
 """The Tesira control component."""
 
 import asyncio
-
+import copy
 import voluptuous as vol
 
 from homeassistant.const import CONF_IP_ADDRESS, CONF_NAME, CONF_PASSWORD, CONF_USERNAME
@@ -74,8 +74,19 @@ async def async_setup(hass: HomeAssistant, config):
             for tesira_device in config[DOMAIN]
         ],
     }
-    await async_load_platform(hass, "media_player", DOMAIN, {}, reformatted_config)
-    await async_load_platform(hass, "switch", DOMAIN, {}, reformatted_config)
+
+    hass.async_create_task(
+        async_load_platform(
+            hass, "media_player", DOMAIN, None, copy.deepcopy(reformatted_config)
+        ),
+        eager_start=True,
+    )
+    hass.async_create_task(
+        async_load_platform(
+            hass, "switch", DOMAIN, None, copy.deepcopy(reformatted_config)
+        ),
+        eager_start=True,
+    )
     return True
 
 

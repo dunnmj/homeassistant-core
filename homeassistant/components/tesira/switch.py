@@ -38,10 +38,10 @@ PLATFORM_SCHEMA = SWITCH_PLATFORM_SCHEMA.extend(
 async def async_setup_platform(
     hass: HomeAssistant, config: ConfigType, async_add_entities, discovery_info=None
 ):
+    _LOGGER.debug("Switch: %s", config)
     if config == {}:
         return
 
-    _LOGGER.debug("Switch: %s", config)
     t = await get_tesira(
         hass, config[CONF_IP_ADDRESS], config[CONF_USERNAME], config[CONF_PASSWORD]
     )
